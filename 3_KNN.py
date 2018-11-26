@@ -52,6 +52,7 @@ if __name__ == "__main__":
     stack = [root]
     while stack:
         node = stack.pop()
+        print(node.val)
         if node.right:
             stack.append(node.right)
         if node.left:

@@ -1,6 +1,5 @@
 import numpy as np 
 
-# TODO kd 树构造错误
 class Node:
     """
     kd 树节点类
@@ -49,7 +48,6 @@ class NearestNeighbor:
         if root.left:
             root.left.parent = root
         root.right = self._generate(X[median+1:], y[median+1:], k, depth)
-        print(depth)
         if root.right:
             root.right.parent = root
         return root

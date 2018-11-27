@@ -1,4 +1,5 @@
 import numpy as np 
+from collections import Counter
 
 class Node:
     """
@@ -14,12 +15,13 @@ class Node:
     def __repr__(self):
         return "<Node: %s>" % str(self.val)
 
-class NearestNeighbor:
+class KNearestNeighborsClassifier:
     """
     最近邻
     """
-    def __init__(self):
+    def __init__(self, K: int=1):
         self._root = None
+        self.K = K
 
     # 构造平衡 kd 树
     def _generate(self, X: np.ndarray, y: np.ndarray, k: int, depth: int=0):
@@ -77,28 +79,34 @@ class NearestNeighbor:
                 return self.nearest_leaf_search(root.left, x, dimension)
             return self.nearest_leaf_search(root.right, x, dimension)
     
-    # 搜索最近邻
+    # 搜索 k 近邻
     def nearest_neighbor_search(self, x: np.ndarray):
         """
         root: KDTree 的根节点
         x: 待搜索的目标点
         """
         nearest_node = self.nearest_leaf_search(self._root, x) 
+        k_nearest_neighbors = [nearest_node] * self.K
         current_node = nearest_node.parent
         min_distance = np.linalg.norm(x - nearest_node.val)
+        k_min_distance = [min_distance] * self.K
         child = nearest_node
         while current_node:
             other_child = current_node.left if current_node.right == child else current_node.right
             for node in [other_child, current_node]:
                 if node:
+                    # 如果新的节点与 x 的距离小于 k 个距离中最小的，则更新 k 近邻
                     distance = np.linalg.norm(x - node.val)
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_node = node
+                    max_distance_of_k = max(k_min_distance)
+                    max_index = k_min_distance.index(max_distance_of_k)
+                    if distance < max_distance_of_k:
+                        k_nearest_neighbors.pop(max_index)
+                        k_min_distance.pop(max_index)
+                        k_nearest_neighbors.append(node)
+                        k_min_distance.append(distance)
             child = current_node
             current_node = current_node.parent
-        # print(min_distance)
-        return nearest_node
+        return k_nearest_neighbors
     
     def predict(self, X: np.ndarray):
         """
@@ -106,8 +114,11 @@ class NearestNeighbor:
         """
         ret = []
         for x in X:
-            nearest_neighbor = self.nearest_neighbor_search(x)
-            ret.append(nearest_neighbor.label)
+            k_nearest_neighbors = self.nearest_neighbor_search(x)
+            labels = [node.label for node in k_nearest_neighbors]
+            label_counter = Counter(labels)
+            label, _ = label_counter.most_common(1)[0]
+            ret.append(label)
         return np.array(ret)
         
 
@@ -119,23 +130,20 @@ if __name__ == "__main__":
     from sklearn.neighbors import KNeighborsClassifier, KDTree
 
     iris = load_iris()
-    nn = NearestNeighbor()
     X = iris.data
     y = iris.target
-    # nn = NearestNeighbor().fit(test, np.array([4, 2, 3, 5, 6, 1]))
-    # nn.predict(np.array([[7.5, 1.5]]))
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=4)
+    nn = KNearestNeighborsClassifier(5)
     nn.fit(X_train, y_train)
     y_pre = nn.predict(X_test)
+    y_t = nn.predict(X_train)
+    print(accuracy_score(y_train, y_t))
     print(accuracy_score(y_test, y_pre))
-    # knn = KNeighborsClassifier(n_neighbors=1, algorithm='kd_tree').fit(X_train, y_train)
-    # y_ = knn.predict(X_test)
-    # print(accuracy_score(y_test, y_))
-    # print('----------------')
-    # nn = NearestNeighbor().fit(X_train, y_train)
-    # nn = NearestNeighbor().fit(X_train, y_train)
-    # for x in X_test:
-        # print(nn.nearest_neighbor_search(x))
+    # knn = KNeighborsClassifier(n_neighbors=2).fit(X_train, y_train)
+    # y_t = knn.predict(X_train)
+    # print(accuracy_score(y_train, y_t))
+    # print(knn.score(X_test, y_test))
+
 
 
 

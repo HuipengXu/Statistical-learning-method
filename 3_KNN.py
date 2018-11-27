@@ -27,7 +27,6 @@ class NearestNeighbor:
         """
         k: dimension of dataset
         """
-        left_depth = right_depth = depth
         samples, _ = X.shape
         if samples == 0:
             return None
@@ -41,15 +40,16 @@ class NearestNeighbor:
                 median = (samples - 1) // 2
             else:
                 median = samples // 2
-            X = X[X[:, split_dimension].argsort()]
-            y = y[X[:, split_dimension].argsort()]
-        left_depth += 1
+            sorted_index = X[:, split_dimension].argsort()
+            X = X[sorted_index]
+            y = y[sorted_index]
+        depth += 1
         root = Node(X[median], y[median])
-        root.left = self._generate(X[:median], y[:median], k, left_depth)
+        root.left = self._generate(X[:median], y[:median], k, depth)
         if root.left:
             root.left.parent = root
-        right_depth += 1
-        root.right = self._generate(X[median+1:], y[median+1:], k, right_depth)
+        root.right = self._generate(X[median+1:], y[median+1:], k, depth)
+        print(depth)
         if root.right:
             root.right.parent = root
         return root
@@ -124,10 +124,11 @@ if __name__ == "__main__":
     nn = NearestNeighbor()
     X = iris.data
     y = iris.target
+    # nn = NearestNeighbor().fit(test, np.array([4, 2, 3, 5, 6, 1]))
+    # nn.predict(np.array([[7.5, 1.5]]))
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
     nn.fit(X_train, y_train)
     y_pre = nn.predict(X_test)
-    # print(y_test)
     print(accuracy_score(y_test, y_pre))
     # knn = KNeighborsClassifier(n_neighbors=1, algorithm='kd_tree').fit(X_train, y_train)
     # y_ = knn.predict(X_test)

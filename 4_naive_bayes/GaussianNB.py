@@ -14,8 +14,8 @@ class GaussianNaiveBayes:
         y_prior_proba = []
         self.classes_ = np.unique(y)
         for c in self.classes_:
-            y_c = (y == c).sum()
-            y_prior_proba.append(y_c / np.size(y))
+            c_count = (y == c).sum()
+            y_prior_proba.append(c_count / np.size(y))
         self._y_prior_proba = np.array(y_prior_proba)
         # 计算连续变量 x 的高斯分布参数
         features = X.shape[1]

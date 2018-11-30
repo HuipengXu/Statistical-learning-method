@@ -1,8 +1,9 @@
 import numpy as np
 from scipy.misc import logsumexp
+from BaseNB import BaseNaiveBayes
 
 # 高斯贝叶斯
-class GaussianNaiveBayes:
+class GaussianNaiveBayes(BaseNaiveBayes):
 
     # 训练
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -37,21 +38,7 @@ class GaussianNaiveBayes:
             jll.append(log_prior + x_given_y)
         jll = np.array(jll).T
         return jll
-
-    def predict_log_proba(self, X: np.ndarray):
-        jll = self._joint_log_likelihood(X)\
-        # 正规化
-        log_prob_x = logsumexp(jll, axis=1)
-        return jll - np.atleast_2d(log_prob_x).T
-         
-    def predict_proba(self, X: np.ndarray):
-        return np.exp(self.predict_log_proba(X))
-
-    def predict(self, X: np.ndarray):
-        jll = self._joint_log_likelihood(X)
-        return self.classes_[np.argmax(jll, axis=1)]
-
-    
+ 
     def __repr__(self):
         return "<GaussianNaiveBayes>" 
 

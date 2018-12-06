@@ -4,8 +4,11 @@ from typing import Tuple
 class Node:
 
     def __init__(self, val: float, mse: float, samples: int, pair: tuple):
+        # 节点所包含的样本的均值
         self._val = val
+        # 节点所包含样本的均方差
         self._mse = mse
+        # 
         self._samples = samples
         self._best_pair = pair
         self._left = None
@@ -20,45 +23,38 @@ class DTRegressor:
         self.root = None
 
     def _split(self, x: np.ndarray, y: np.ndarray, split_feature_index: int, split_point: float):
+        """
+        根据特征列和切分点将数据集分割为左右两部分
+        """
         left_index = x[:, split_feature_index] <= split_point
         right_index = x[:, split_feature_index] > split_point
-        return x[left_index, :], x[right_index, :], y[left_index], y[right_index]
-
-    def chose_best_feature(self, x: np.ndarray, y: np.ndarray, op: Tuple[int]=(1, 2)):
-        if np.size(np.unique(y)) == 1:
-            return None, y.mean()
-        y_var = y.var() * np.size(y)
-        best_feature = -1
-        best_point = 0
-        low_error = np.inf
-        m, n = x.shape
-        for i in range(n):
-            for i in np.unique(y):
-                _, _, left_y, right_y = self._split(x, y, i, i)
-                if np.size(left_y) < op[1] or np.size(right_y) < op[1]: continue
-                temp_error = left_y.var() * np.size(left_y) + right_y.var() * np.size(right_y)
-                if temp_error < low_error:
-                    low_error = temp_error
-                    best_feature = i
-                    best_point = i
-        if y_var - low_error < op[0]:
-            return None, y.mean()
-        _, _, left_y, right_y = self._split(x, y, best_feature, best_point)
-        return best_feature, best_point       
+        return x[left_index, :], x[right_index, :], y[left_index], y[right_index]    
 
     def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray):
+        """
+        递归生成最小二乘回归树
+        """
+        # 初始化最有分割点
         best_feature = best_point = None
         pair = (best_feature, best_point)
         y_var = y.var()
         min_loss = y_var * np.size(y)
         rows, features = X.shape
+        # 如果样本数量少于 2 ，则停止分割，生成叶节点
         if rows < 2:
             return Node(y.mean(), y.var(), rows, pair)
+        # 如果样本全部属于一个类则停止分割，生成叶节点
         if np.size(np.unique(y)) == 1:
             return Node(y[0], 0, rows, pair)
         for f in range(features):
+            # 去重
             unique_point = np.unique(X[:, f])
+            # 计算相邻元素中值作为分割点
             split_point = [(unique_point[i] + unique_point[i+1]) / 2 for i in range(np.size(unique_point) - 1)]
+            # 添加第一个和最后一个作为分割点
+            split_point.insert(0, unique_point[0])
+            split_point.append(unique_point[-1])
+            # 遍历分割点
             for p in split_point:
                 _, _, left_y, right_y = self._split(X, y, f, p)
                 left_var = left_y.var() * np.size(left_y) if np.size(left_y) else 0
@@ -69,6 +65,7 @@ class DTRegressor:
                     min_loss = loss
         pair = (best_feature, best_point)
         root = Node(y.mean(), y_var, rows, pair)
+        # 如果遍历完没找到最优分割特征，则停止分割，生成叶节点
         if best_feature is None:
             return root
         left_x, right_x, left_y, right_y = self._split(X, y, best_feature, best_point)
@@ -76,26 +73,32 @@ class DTRegressor:
         root._right = self._generate_regression_tree(right_x, right_y)
         return root
 
-    # def _gt(self, x, y):
-    #     best_f, best_pnt = self.chose_best_feature(x, y)
-    #     pair = (best_f, best_pnt)
-    #     if best_f == None: return Node(best_pnt, (None, None))
-    #     data_l_x, data_r_x, data_l_y, data_r_y = self._split(x, y, best_f, best_pnt)
-    #     root = Node(y.mean(), pair)
-    #     root._left = self._gt(data_l_x, data_l_y)
-    #     root._right = self._gt(data_r_x, data_r_y)
-    #     return root
-
     def fit(self, X: np.ndarray, y: np.ndarray):
+        """
+        X, y: train datasets
+        X.shape = (n_samples, n_features)
+        y.shape = (n_samples, )
+
+        获得决策树根节点
+        """
         self.root = self._generate_regression_tree(X, y)
         return self
 
+    def _poster_pruning(self):
+        """
+        对已经生成的决策树进行剪枝
+        """
+        
+
     def predict(self, X: np.ndarray):
-        split_feature, split_point = self.root._best_pair
-        node = self.root
+        """
+        X: data to be predicted, shape = (n_samples, n_features)
+        """
         ret = []
         for x in X:
-            while split_feature:
+            split_feature, split_point = self.root._best_pair
+            node = self.root
+            while split_feature != None:
                 if x[split_feature] <= split_point:
                     node = node._left
                 else:
@@ -116,16 +119,26 @@ if __name__ == "__main__":
     y = boston.target
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
     dtr = DTRegressor().fit(X_train, y_train)
-    root = dtr.root
-    print((root._best_pair[1], root._mse, root._samples, root._val))
-    children = [root._left, root._right]
-    while children:
-        child = children.pop(0)
-        print((child._best_pair[1], child._mse, child._samples, child._val))
-        if child._left:
-            children.append(child._left)
-        if child._right:
-            children.append(child._right)
+    # 广度遍历
+    # root = dtr.root
+    # print((root._best_pair, root._mse, root._samples, root._val))
+    # children = [root._left, root._right]
+    # leaf = []
+    # while children:
+    #     child = children.pop(0)
+    #     if not any((child._left, child._right)):
+    #         leaf.append(child)
+    #     # print((child._best_pair, child._mse, child._samples, child._val))
+    #     if child._left:
+    #         children.append(child._left)
+    #     if child._right:
+    #         children.append(child._right)
+
+    # for l in leaf:
+    #     print((l._best_pair, l._mse, l._samples, l._val))
     
     y_pred = dtr.predict(X_test)
+    # print(y_pred)
     print(mean_squared_error(y_test, y_pred))
+    # test = X_train[(X_train[:, 12] <= 8.13) & (X_train[:, 5] > 7.435) & (X_train[:, 10] <= 18.3) & (X_train[:, 0] > 0.577)]
+    # print(dtr.predict(test))

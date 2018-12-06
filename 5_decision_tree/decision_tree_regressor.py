@@ -34,7 +34,7 @@ class DTRegressor:
         right_index = x[:, split_feature_index] > split_point
         return x[left_index, :], x[right_index, :], y[left_index], y[right_index]    
 
-    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray, is_pre_pruning: bool=True):
+    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray):
         """
         递归生成最小二乘回归树
         """
@@ -139,7 +139,7 @@ class DTRegressor:
             g_t = (c_t - c_T_t) / (leaf_nums - 1)
             if g_t < alpha:
                 alpha = g_t
-                min_gt_tree = child\
+                min_gt_tree = child
         # 将内部节点转换为叶节点
         min_gt_tree._left = None
         min_gt_tree._right = None

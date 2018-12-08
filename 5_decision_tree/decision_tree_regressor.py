@@ -1,6 +1,6 @@
 import numpy as np
 from graphviz import Digraph
-from time import time
+from copy import deepcopy
 from uuid import uuid1
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
@@ -93,7 +93,7 @@ class DTRegressor:
         if not self._is_pre_pruning:
             X_train, X_validate, y_train, y_validate = train_test_split(X, y, test_size=0.1, random_state=0)
             T_0 = self._generate_regression_tree(X_train, y_train)
-            sub_trees_series = self._poster_pruning(X_train, y_train, T_0)
+            sub_trees_series = self._poster_pruning(T_0)
             st_scores = []
             alphas = []
             for sub_tree in sub_trees_series:
@@ -111,20 +111,20 @@ class DTRegressor:
             self.root = self._generate_regression_tree(X, y)
         return self
 
-    def _get_pruned_tree(self, X: np.ndarray, y: np.ndarray, root: Node):
+    def _get_pruned_tree(self, root: Node):
         alpha = np.inf
         # 只有根节点
         if not any((root._left, root._right)):
             return (alpha, root)
         children = [root]
-        min_gt_tree = root
+        min_gt_node = root
         while children:
             child = children.pop(0)
             # 跳过叶节点
-            if not any((child._left, child._right)):
-                continue
-            children.append(child._left)
-            children.append(child._right)
+            if child._left._left:
+                children.append(child._left)
+            if child._right._left:
+                children.append(child._right)
             # 剪枝后的预测误差
             c_t = child._mse * child._samples
             # 内部节点的叶结点个数
@@ -135,8 +135,8 @@ class DTRegressor:
                 sub_node = child_sub_node.pop(0)
                 if not any((sub_node._left, sub_node._right)):
                     # 剪枝前预测误差
-                    c_T_t += (sub_node._mse * sub_node._samples + sub_node._mse * sub_node._samples)
-                    leaf_nums += 2
+                    c_T_t += sub_node._mse * sub_node._samples
+                    leaf_nums += 1
                     continue
                 child_sub_node.append(sub_node._left)
                 child_sub_node.append(sub_node._right)
@@ -144,15 +144,15 @@ class DTRegressor:
             g_t = (c_t - c_T_t) / (leaf_nums - 1)
             if g_t < alpha:
                 alpha = g_t
-                min_gt_tree = child
+                min_gt_node = child
         # 将内部节点转换为叶节点
-        if min_gt_tree != root:
-            min_gt_tree._left = None
-            min_gt_tree._right = None
-            min_gt_tree._best_pair = (None, None)
+        if min_gt_node != root:
+            min_gt_node._left = None
+            min_gt_node._right = None
+            min_gt_node._best_pair = (None, None)
         return (alpha, root)
 
-    def _poster_pruning(self, X: np.ndarray, y: np.ndarray, root: Node):
+    def _poster_pruning(self, root: Node):
         """
         对已经生成的决策树进行剪枝得到最优子树序列
         """
@@ -160,7 +160,7 @@ class DTRegressor:
         pruned_tree = root
         # 构造最优子树序列
         while True:
-            alpha, pruned_tree = self._get_pruned_tree(X, y, pruned_tree)
+            alpha, pruned_tree = self._get_pruned_tree(deepcopy(pruned_tree))
             sub_trees_series.append((alpha, pruned_tree))
             if not any((pruned_tree._left._best_pair[0], pruned_tree._right._best_pair[0])):
                 break
@@ -241,9 +241,9 @@ if __name__ == "__main__":
     # dtr = DTRegressor()
     # ret = cross_validate(dtr, X_train, y_train, cv=3)
     # print(ret)
-    dtr = DTRegressor(is_pre_pruning=False, n_splits=3).fit(X_train, y_train)
-    # dtr = DTRegressor().fit(X_train, y_train)
-    # dtr.plot_tree()
+    # dtr = DTRegressor(is_pre_pruning=False).fit(X_train, y_train)
+    dtr = DTRegressor().fit(X_train, y_train)
+    dtr.plot_tree()
     print(dtr.score(X_test, y_test))
     # 广度遍历
     # root = dtr.root

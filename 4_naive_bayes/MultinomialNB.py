@@ -1,7 +1,5 @@
 import numpy as np 
 from sklearn.preprocessing import  LabelBinarizer
-from scipy.misc import logsumexp
-from collections import Counter
 from BaseNB import BaseNaiveBayes
 
 class MultinomialNaiveBayes(BaseNaiveBayes):

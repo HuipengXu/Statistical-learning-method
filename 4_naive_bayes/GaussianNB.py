@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.misc import logsumexp
 from BaseNB import BaseNaiveBayes
 
 # 高斯贝叶斯

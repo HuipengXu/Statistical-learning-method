@@ -98,7 +98,7 @@ class DTRegressor:
             alphas = []
             for sub_tree in sub_trees_series:
                 self.root = sub_tree[1]
-                self.plot_tree()
+                # self.plot_tree()
                 alphas.append(sub_tree[0])
                 st_score = self.score(X_validate, y_validate)
                 st_scores.append(st_score)
@@ -112,12 +112,29 @@ class DTRegressor:
         return self
 
     def _get_pruned_tree(self, root: Node):
-        alpha = np.inf
-        # 只有根节点
-        if not any((root._left, root._right)):
-            return (alpha, root)
+        min_gt_node = self._gt_memory.pop(0)
         children = [root]
-        min_gt_node = root
+        while children:
+            child = children.pop(0)
+            if child._id == min_gt_node[1]:
+                break
+            if child._left._left:
+                children.append(child._left)
+            if child._right._left:
+                children.append(child._right)
+        # 将内部节点转换为叶节点
+        if child != root:
+            child._left = None
+            child._right = None
+            child._best_pair = (None, None)
+        return (min_gt_node[0], root)
+
+    def _poster_pruning(self, root: Node):
+        """
+        对已经生成的决策树进行剪枝得到最优子树序列
+        """
+        self._gt_memory = []
+        children = [root]
         while children:
             child = children.pop(0)
             # 跳过叶节点
@@ -142,21 +159,9 @@ class DTRegressor:
                 child_sub_node.append(sub_node._right)
             # 剪枝阈值
             g_t = (c_t - c_T_t) / (leaf_nums - 1)
-            if g_t < alpha:
-                alpha = g_t
-                min_gt_node = child
-        # 将内部节点转换为叶节点
-        if min_gt_node != root:
-            min_gt_node._left = None
-            min_gt_node._right = None
-            min_gt_node._best_pair = (None, None)
-        return (alpha, root)
-
-    def _poster_pruning(self, root: Node):
-        """
-        对已经生成的决策树进行剪枝得到最优子树序列
-        """
-        sub_trees_series = [(np.inf, root)]
+            self._gt_memory.append((g_t, child._id))
+        self._gt_memory.sort()
+        sub_trees_series = []
         pruned_tree = root
         # 构造最优子树序列
         while True:
@@ -226,7 +231,7 @@ class DTRegressor:
                 children.append(node._left)
             if node._right._left:
                 children.append(node._right)
-        tree.render('decision_tree.gv', view=True)
+        tree.render('decision_tree_regressor.gv', view=True)
 
 
 if __name__ == "__main__":
@@ -242,7 +247,7 @@ if __name__ == "__main__":
     # ret = cross_validate(dtr, X_train, y_train, cv=3)
     # print(ret)
     # dtr = DTRegressor(is_pre_pruning=False).fit(X_train, y_train)
-    dtr = DTRegressor().fit(X_train, y_train)
+    dtr = DTRegressor(is_pre_pruning=False).fit(X_train, y_train)
     dtr.plot_tree()
     print(dtr.score(X_test, y_test))
     # 广度遍历

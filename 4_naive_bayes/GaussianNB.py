@@ -1,5 +1,5 @@
 import numpy as np
-from BaseNB import BaseNaiveBayes
+from .BaseNB import BaseNaiveBayes
 
 # 高斯贝叶斯
 class GaussianNaiveBayes(BaseNaiveBayes):

@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.preprocessing import binarize
-from BaseNB import BaseNaiveBayes
+from .BaseNB import BaseNaiveBayes
 from sklearn.preprocessing import LabelBinarizer
 
 class BernoulliNaiveBayes(BaseNaiveBayes):

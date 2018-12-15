@@ -1,6 +1,6 @@
 import numpy as np 
 from sklearn.preprocessing import  LabelBinarizer
-from BaseNB import BaseNaiveBayes
+from .BaseNB import BaseNaiveBayes
 
 class MultinomialNaiveBayes(BaseNaiveBayes):
 

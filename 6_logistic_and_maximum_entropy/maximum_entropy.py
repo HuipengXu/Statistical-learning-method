@@ -38,7 +38,7 @@ class MaximumEntropy:
         # 待优化参数
         self._w = np.zeros_like(E_P_wave)
         last_w = deepcopy(self._w)
-        for i in range(self._max_iter):
+        for _ in range(self._max_iter):
             pyx = self._calculate_pyx(X)
             E_P = np.dot(pyx.T, X / n_samples)
             delta = 1.0 / M * (np.log(E_P_wave + 1e-9) - np.log(E_P + 1e-9))

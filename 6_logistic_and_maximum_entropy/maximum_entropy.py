@@ -3,18 +3,19 @@
 # @Blog    : https://brycexxx.github.io/
 
 import numpy as np
+from sklearn.datasets import make_spd_matrix
 from sklearn.preprocessing import LabelBinarizer
 from copy import deepcopy
 
-class MaximumEntropy:
+class MaximumEntropyIIS:
 
-    def __init__(self, max_iter=200, tol=1e-2):
+    def __init__(self, max_iter: int=200, eps: float=1e-2):
         self._max_iter = max_iter
-        self._tol = tol
+        self._eps = eps
 
     def _convergence(self, last_w):
         for w, lw in zip(self._w.flatten().tolist(), last_w.flatten().tolist()):
-            if abs(w - lw) >= self._tol:
+            if abs(w - lw) >= self._eps:
                 return False
         return True
 
@@ -34,14 +35,14 @@ class MaximumEntropy:
         # 所有特征在 (x, y) 出现的次数
         M = xy_freq.sum()
         # 特征函数 f(x, y) 关于经验分布的 P(x, y) 的期望值
-        E_P_wave = xy_freq / n_samples
+        self._E_P_wave = xy_freq / n_samples
         # 待优化参数
-        self._w = np.zeros_like(E_P_wave)
+        self._w = np.zeros_like(self._E_P_wave)
         last_w = deepcopy(self._w)
         for _ in range(self._max_iter):
             pyx = self._calculate_pyx(X)
             E_P = np.dot(pyx.T, X / n_samples)
-            delta = 1.0 / M * (np.log(E_P_wave + 1e-9) - np.log(E_P + 1e-9))
+            delta = 1.0 / M * (np.log(self._E_P_wave + 1e-9) - np.log(E_P + 1e-9))
             self._w += delta
             if self._convergence(last_w):
                 break
@@ -57,6 +58,84 @@ class MaximumEntropy:
         ret = self.classes[idx]
         return ret
 
+class MaximumEntropyBFGS:
+
+    def __init__(self, max_iter: int=200, eps: float=1e-2):
+        self._max_iter = max_iter
+        self._eps = eps
+
+    def _calculate_pyx(self, X: np.ndarray):
+        w = np.concatenate((self._w[:self.features], self._w[self.features:]), axis=1)
+        numerator = np.exp(np.dot(X, w))
+        denominator = numerator.sum(axis=1, keepdims=True)
+        return numerator / denominator
+
+    def _cost(self, X:np.ndarray, w: np.ndarray):
+        w = np.concatenate((w[:self.features], w[self.features:]), axis=1)
+        P_x = X / X.shape[0]
+        log_zw = np.exp(np.dot(X, w)).sum(axis=1, keepdims=True)
+        cost = np.multiply(P_x, log_zw).sum() - np.multiply(self._E_P_wave, np.concatenate((w[:, 0], w[:, 1]), axis=0)).sum()
+        return cost
+
+    # 确定步长 lambda_
+    # Armijo 条件: f(xk + lambda_ * pk) <= f(xk) + lambda_ * c * g * pk
+    def _backtracking_line_search(self, X:np.ndarray, g_w: np.ndarray, p: np.ndarray):
+        # 初始化 c, tau lambda_
+        c = np.random.random_sample()
+        tau = np.random.random_sample()
+        lambda_ = 10.0
+        while True:
+            new_w = self._w + lambda_ * p
+            # Armijo 条件左边
+            Armijo_l = self._cost(X, new_w)
+            # Armijo 条件左边
+            Armijo_r = self._cost(X, self._w) + lambda_ * c * np.multiply(g_w, p).sum()
+            if Armijo_l <= Armijo_r:
+                return lambda_
+            lambda_ *= tau
+
+    def _calculate_gradient(self, X: np.ndarray):
+        pyx = self._calculate_pyx(X)
+        E_P = np.dot(pyx.T, X / X.shape[0]).reshape(-1, 1)
+        g_w = E_P - self._E_P_wave
+        return g_w
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        n_samples, self.features = X.shape
+        lb = LabelBinarizer().fit(y)
+        self.classes = lb.classes_
+        y = lb.transform(y)
+        y = np.concatenate((1-y, y), axis=1)
+        xy_freq = np.dot(y.T, X).reshape(-1, 1)
+        self._E_P_wave = xy_freq / n_samples
+        self._w = np.zeros_like(self._E_P_wave)
+        # 初始化对称正定矩阵 B
+        B = make_spd_matrix(self._w.shape[0])
+        g_w = self._calculate_gradient(X)
+        for _ in range(self._max_iter):
+            p = np.dot(np.linalg.inv(B), -g_w)
+            lambda_ = self._backtracking_line_search(X, g_w, p)
+            last_w = deepcopy(self._w)
+            self._w += lambda_ * p
+            last_g_w = deepcopy(g_w)
+            g_w = self._calculate_gradient(X)
+            if np.linalg.norm(g_w) < self._eps:
+                break
+            delta_g = g_w - last_g_w
+            delta_w = self._w - last_w
+            # TODO 直接更新为逆？
+            B = B + np.dot(delta_g, delta_g.T) / (np.dot(delta_g.T, delta_w) + 1e-9) -\
+                np.dot(np.dot(np.dot(B, delta_w), delta_w.T), B) / (np.dot(np.dot(delta_w.T, B), delta_w) + 1e-9)
+        return self
+
+    def predict_proba(self, X: np.ndarray):
+        return self._calculate_pyx(X)
+
+    def predict(self, X: np.ndarray):
+        proba = self.predict_proba(X)
+        idx = proba.argmax(axis=1)
+        ret = self.classes[idx]
+        return ret
 
 if __name__ == "__main__":
     import pandas as pd
@@ -76,11 +155,12 @@ if __name__ == "__main__":
     y = np.where(y=='yes', 1, 0)
     vect = CountVectorizer()
     vectorized_X = vect.fit_transform(X)
-    me = MaximumEntropy().fit(vectorized_X.toarray(), y)
+    me = MaximumEntropyBFGS().fit(vectorized_X.toarray(), y)
     x_test = ['sunny hot high FALSE', 'overcast hot high FALSE', 'sunny cool high TRUE']
     x_test_vect = vect.transform(x_test)
-    pred = me.predict(vectorized_X.toarray())
-    print(accuracy_score(y, pred))
+    pred = me.predict(x_test_vect.toarray())
+    print(pred)
+    # print(accuracy_score(y, pred))
 
     # data = open(r'..\4_naive_bayes\corpus').read()
     # labels, texts = [], []
@@ -96,6 +176,6 @@ if __name__ == "__main__":
     # X_train_vectorized = binarize(X_train_vectorized)
     # X_test_vectorized = vect.transform(X_test).toarray()
     # X_test_vectorized = binarize(X_test_vectorized)
-    # me = MaximumEntropy().fit(X_train_vectorized, y_train)
+    # me = MaximumEntropyBFGS(500).fit(X_train_vectorized, y_train)
     # y_pred = me.predict(X_test_vectorized)
     # print(accuracy_score(y_test, y_pred))

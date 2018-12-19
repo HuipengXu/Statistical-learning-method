@@ -7,11 +7,13 @@ import numpy as np
 # 逻辑回归分类
 class LogisticRegression:
 
-    def __init__(self, learning_rate: float=1e-3, C: float=1.0, max_iter: int=1000):
+    def __init__(self, learning_rate: float=1e-3, decay: float=1e-4, C: float=1.0, max_iter: int=5000, solver: str='sgd'):
         self._w = None
         self._lr = learning_rate
+        self._decay = decay
         self._C = C
         self._max_iter = max_iter
+        self._solver = solver
 
     def _sigmoid(self, z: np.ndarray):
         return 1.0 / (np.exp(-z) + 1)
@@ -21,11 +23,17 @@ class LogisticRegression:
         grad = np.dot(x.T, (y - self._sigmoid(z))) + w / self._C
         return grad
     
-    def _update_weights(self, X: np.ndarray, y: np.ndarray, n_features: int):
+    def _gradient_descent(self, X: np.ndarray, y: np.ndarray, n_features: int):
         w = np.zeros((n_features, 1))
         for i in range(self._max_iter):
-            grad = self._calculate_grad(X, y.reshape(-1, 1), w)
-            w += self._lr * grad
+            lr = self._lr * 1.0 / (1.0 + self._decay * i)
+            if self._solver == 'sgd':
+                idx = np.random.randint(X.shape[0])
+                x, y_ = X[idx: idx+1, :], y[idx]
+            else:
+                x, y_ = X, y
+            grad = self._calculate_grad(x, y_.reshape(-1, 1), w)
+            w += lr * grad
         return w
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -40,13 +48,13 @@ class LogisticRegression:
         self._classes_count = np.size(self._classes)
         # 二项逻辑回归
         if self._classes_count == 2:
-            self._w = self._update_weights(X, y, features)
+            self._w = self._gradient_descent(X, y, features)
             return self
         # 多项逻辑回归
         self._w = np.zeros((features, self._classes_count))
         for i in range(self._classes_count):
             y_c = np.where(y==self._classes[i], 1, 0)
-            self._w[:, i] = self._update_weights(X, y_c, features).squeeze()
+            self._w[:, i] = self._gradient_descent(X, y_c, features).squeeze()
         return self
 
     def predict(self, X: np.ndarray):
@@ -85,9 +93,9 @@ if __name__ == "__main__":
     X = bc.data
     y = bc.target
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
-    lr = LogisticRegression().fit(X_train, y_train)
+    lr = LogisticRegression(C=5).fit(X_train, y_train)
     y_pred = lr.predict(X_test)
     print(accuracy_score(y_test, y_pred))
     print('------------------')
-    Lr = LR(solver='sag').fit(X_train, y_train)
+    Lr = LR(solver='sag', max_iter=1000).fit(X_train, y_train)
     print(Lr.score(X_test, y_test))

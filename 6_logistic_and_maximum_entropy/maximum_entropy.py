@@ -150,39 +150,39 @@ if __name__ == "__main__":
     from sklearn.feature_extraction.text import CountVectorizer
     from sklearn.preprocessing import binarize
 
-    # with open(r'..\ttest\data.txt', 'r') as f:
-    #     X = []
-    #     y = []
-    #     for line in f.readlines():
-    #         l = line.split()
-    #         X.append(' '.join(l[1:]))
-    #         y.append(l[0])
-    # y = np.array(y)
-    # y = np.where(y=='yes', 1, 0)
-    # vect = CountVectorizer()
-    # vectorized_X = vect.fit_transform(X)
-    # me = MaximumEntropyIIS().fit(vectorized_X.toarray(), y)
-    # x_test = ['sunny hot high FALSE', 'overcast hot high FALSE', 'sunny cool high TRUE']
-    # x_test_vect = vect.transform(x_test)
-    # pred = me.predict(vectorized_X.toarray())
-    # print(accuracy_score(y, pred))
+    with open(r'..\ttest\data.txt', 'r') as f:
+        X = []
+        y = []
+        for line in f.readlines():
+            l = line.split()
+            X.append(' '.join(l[1:]))
+            y.append(l[0])
+    y = np.array(y)
+    y = np.where(y=='yes', 1, 0)
+    vect = CountVectorizer()
+    vectorized_X = vect.fit_transform(X)
+    me = MaximumEntropyIIS().fit(vectorized_X.toarray(), y)
+    x_test = ['sunny hot high FALSE', 'overcast hot high FALSE', 'sunny cool high TRUE']
+    x_test_vect = vect.transform(x_test)
+    pred = me.predict(vectorized_X.toarray())
+    print(accuracy_score(y, pred))
     # pred = me.predict(x_test_vect.toarray())
     # print(pred)
 
-    data = open(r'..\4_naive_bayes\corpus').read()
-    labels, texts = [], []
-    for line in data.split('\n'):
-        content = line.split(maxsplit=1)
-        labels.append(content[0][-1])
-        texts.append(content[1])
-
-    data = pd.DataFrame(data={'labels': labels, 'texts': texts})
-    X_train, X_test, y_train, y_test = train_test_split(data['texts'], data['labels'].apply(int), random_state=0)
-    vect = CountVectorizer(min_df=5).fit(X_train)
-    X_train_vectorized = vect.transform(X_train).toarray()
-    X_train_vectorized = binarize(X_train_vectorized)
-    X_test_vectorized = vect.transform(X_test).toarray()
-    X_test_vectorized = binarize(X_test_vectorized)
-    me = MaximumEntropyBFGS(500).fit(X_train_vectorized, y_train)
-    y_pred = me.predict(X_test_vectorized)
-    print(accuracy_score(y_test, y_pred))
+    # data = open(r'..\4_naive_bayes\corpus').read()
+    # labels, texts = [], []
+    # for line in data.split('\n'):
+    #     content = line.split(maxsplit=1)
+    #     labels.append(content[0][-1])
+    #     texts.append(content[1])
+    #
+    # data = pd.DataFrame(data={'labels': labels, 'texts': texts})
+    # X_train, X_test, y_train, y_test = train_test_split(data['texts'], data['labels'].apply(int), random_state=0)
+    # vect = CountVectorizer(min_df=5).fit(X_train)
+    # X_train_vectorized = vect.transform(X_train).toarray()
+    # X_train_vectorized = binarize(X_train_vectorized)
+    # X_test_vectorized = vect.transform(X_test).toarray()
+    # X_test_vectorized = binarize(X_test_vectorized)
+    # me = MaximumEntropyBFGS(500).fit(X_train_vectorized, y_train)
+    # y_pred = me.predict(X_test_vectorized)
+    # print(accuracy_score(y_test, y_pred))

@@ -76,10 +76,10 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import pandas as pd
 
-    # data = pd.read_csv('data.txt', sep='\s+', header=None)
+    # data = pd.read_csv('..\ttest\data1.txt', sep='\s+', header=None)
     # X_train = data.iloc[:, :2]
     # y_train = data.iloc[:, 2]
-    # lr = LogisticRegression(C=0.08).fit(X_train, y_train)
+    # lr = LogisticRegression().fit(X_train, y_train)
     # neg_index = (data.iloc[:, 2] == 0).tolist()
     # pos_index = (data.iloc[:, 2] == 1).tolist()
     # plt.scatter(data.iloc[pos_index, 0], data.iloc[pos_index, 1], s=30, c='red')

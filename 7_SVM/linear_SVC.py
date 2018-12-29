@@ -7,12 +7,13 @@ from typing import Tuple
 from sklearn.preprocessing import LabelBinarizer
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+import random
 
 class SupportVectorClassifier:
     """
     线性支持向量机
     """
-    def __init__(self, tol: float=1e-4, C: float=1.0, max_iter: int=1000):
+    def __init__(self, tol: float=1e-3, C: float=1.0, max_iter: int=1000):
         self.tol = tol
         self.C = C
         self.max_iter = max_iter
@@ -24,41 +25,31 @@ class SupportVectorClassifier:
     def _Ei(self, i: int) -> float:
         return self._gx(self.X[i]) - self.y[i]
 
-    def _stop_condition(self) -> bool:
-        cond1 = np.dot(self.y.T, self.alpha) == 0
-        if not cond1:
-            return False
-        cond2 = (self.alpha >= 0).all() and (self.alpha <= self.C).all()
-        if not cond2:
-            return False
-        for i in range(self.n_samples):
-            gx = self.Ei[i] + self.y[i]
-            ygx = gx * self.y[i]
-            if self.alpha[i] == 0:
-                if ygx < 1:
-                    return False
-            elif 0 < self.alpha[i] < self.C:
-                if ygx != 1:
-                    return False
-            else:
-                if ygx > 1:
-                    return False
-        return True
+    def _select_alpha2(self, idx1: int, E1: float) -> int:
+        max_deltaE = 0
+        idx2 = -1
+        non_bounds = np.nonzero((self.alpha > 0) * (self.alpha < self.C))[0]
+        if len(non_bounds) > 0:
+            iter_index = non_bounds
+        else:
+            iter_index = range(self.n_samples)
+        for k in iter_index:
+            if k == idx1: continue
+            Ek = self.Ei[k]
+            deltaE = abs(E1 - Ek)
+            if (deltaE > max_deltaE):
+                idx2 = k
+                max_deltaE = deltaE
+        return idx2
 
     def _inner_loop(self, idx1: int):
-        self.Ei[idx1] = self._Ei(idx1)
-        if abs(self.Ei[idx1]) > self.tol:
-            alpha1 = self.alpha[idx1].copy()
-            E1 = self.Ei[idx1]
-            idx2 = self.Ei.argmin() if E1 >= 0 else self.Ei.argmax()
+        E1 = self.Ei[idx1]
+        alpha1 = self.alpha[idx1].copy()
+        r1 = E1 * self.y[idx1]
+        if ((r1 < -self.tol and alpha1 < self.C) or (r1 > self.tol and alpha1 > 0)):
+            idx2 = self._select_alpha2(idx1, E1)
             E2 = self.Ei[idx2]
             alpha2 = self.alpha[idx2].copy()
-            K_11 = np.dot(self.X[idx1, np.newaxis], self.X[idx1][:, np.newaxis])
-            K_22 = np.dot(self.X[idx2, np.newaxis], self.X[idx2][:, np.newaxis])
-            K_12 = np.dot(self.X[idx1, np.newaxis], self.X[idx2][:, np.newaxis])
-            eta = K_11 + K_22 - 2 * K_12
-            if eta <= 0: print('eta < 0'); return 0
-            alpha2_new_unc = alpha2 + self.y[idx2] * (E1 - E2) / eta
             if self.y[idx1] == self.y[idx2]:
                 L = max(.0, alpha2 + alpha1 - self.C)
                 H = min(self.C, alpha2 + alpha1)
@@ -66,13 +57,33 @@ class SupportVectorClassifier:
                 L = max(.0, alpha2 - alpha1)
                 H = min(self.C, self.C + alpha2 - alpha1)
             if L == H: print('L == H'); return 0
-            # 更新后的 alpha2
-            if alpha2_new_unc > H: alpha2_new = H
-            elif alpha2_new_unc < L: alpha2_new = L
-            else: alpha2_new = alpha2_new_unc
+            K_11 = np.dot(self.X[idx1, np.newaxis], self.X[idx1][:, np.newaxis])
+            K_22 = np.dot(self.X[idx2, np.newaxis], self.X[idx2][:, np.newaxis])
+            K_12 = np.dot(self.X[idx1, np.newaxis], self.X[idx2][:, np.newaxis])
+            eta = K_11 + K_22 - 2 * K_12
+            s = self.y[idx1] * self.y[idx2]
+            if eta <= 0:
+                f1 = self.y[idx1] * (E1 + self.b) - alpha1 * K_11 - s * alpha2 * K_12
+                f2 = self.y[idx2] * (E2 + self.b) - s * alpha1 * K_12 - alpha2 * K_22
+                L1 = alpha1 + s * (alpha2 - L)
+                H1 = alpha1 + s * (alpha2 - H)
+                phi_l = L1 * f1 + L * f2 + 0.5 * L1 ** 2 * K_11 + 0.5 * L ** 2 * K_22 + s * L * L1 * K_12
+                phi_h = H1 * f1 + H * f2 + 0.5 * H1 ** 2 * K_11 + 0.5 * H ** 2 * K_22 + s * H * H1 * K_12
+                if (phi_l < (phi_h - 1e-5)):
+                    alpha2_new = L
+                elif (phi_l > (phi_h + 1e-5)):
+                    alpha2_new = H
+                else:
+                    alpha2_new = alpha2
+            else:
+                alpha2_new_unc = alpha2 + self.y[idx2] * (E1 - E2) / eta
+                # 更新后的 alpha2
+                if alpha2_new_unc > H: alpha2_new = H
+                elif alpha2_new_unc < L: alpha2_new = L
+                else: alpha2_new = alpha2_new_unc
             if abs(alpha2_new - alpha2) < 1e-5: print('alpha2 moving not enough'); return 0
             # 更新后的 alpha1
-            alpha1_new = alpha1 + self.y[idx1] * self.y[idx2] * (alpha2 - alpha2_new)
+            alpha1_new = alpha1 + s * (alpha2 - alpha2_new)
             # 更新 alpha1 alpha2
             self.alpha[[idx1, idx2]] = np.array([[alpha1_new, alpha2_new]]).T
             b1_new = - E1 - self.y[idx1] * K_11 * (alpha1_new - alpha1) - self.y[idx2] * \
@@ -95,18 +106,23 @@ class SupportVectorClassifier:
         self.y = lb.fit_transform(self.y)
         self.n_samples, self.n_features = self.X.shape
         self.alpha = np.zeros((self.n_samples, 1))
-        self.Ei = np.zeros((self.n_samples, 1))
+        self.Ei = np.zeros_like(self.alpha)
+        for i in range(self.n_samples): self.Ei[i] = self._Ei(i)
         iter_ = 0; entire_set = True; alpha_pairs_changed = 0
-        while (iter_ < self.max_iter) and (entire_set or alpha_pairs_changed):
+        while (iter_ < self.max_iter) and (entire_set or alpha_pairs_changed > 0):
             alpha_pairs_changed = 0
             if not entire_set:
-                non_boundis = np.nonzero((self.alpha > 0) * (self.alpha < self.C))[0]
-                for i in non_boundis:
+                non_bounds = np.nonzero((self.alpha > 0) * (self.alpha < self.C))[0]
+                for i in non_bounds:
                     alpha_pairs_changed += self._inner_loop(i)
+                    print("non-bound, iter: %d i:%d, pairs changed %d" % \
+                    (iter_, i, alpha_pairs_changed))
                 iter_ += 1
             else:
                 for i in range(self.n_samples):
                     alpha_pairs_changed += self._inner_loop(i)
+                    print("fullSet, iter: %d i:%d, pairs changed %d" % \
+                    (iter_, i, alpha_pairs_changed))
                 iter_ += 1
             if entire_set: entire_set = False
             elif alpha_pairs_changed == 0: entire_set = True
@@ -144,39 +160,38 @@ if __name__ == "__main__":
     from sklearn.svm import LinearSVC
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import accuracy_score
-    from sklearn.dummy import DummyClassifier
 
-    bc = load_breast_cancer()
-    X = bc.data
-    y = bc.target
-    train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
-    svc = SupportVectorClassifier(max_iter=1000, tol=1e-5)
-    svc.fit(train_X, train_y)
-    y_pred = svc.predict(test_X)
-    print(y_pred.sum())
-    print(accuracy_score(test_y, y_pred))
-    print('-'*20)
-    sk_svc = LinearSVC(max_iter=2000, random_state=42).fit(train_X, train_y)
-    print(sk_svc.score(test_X, test_y))
-    # def loadDataSet(fileName):
-    #     """
-    #     加载数据集
-    #     :param fileName:
-    #     :return:
-    #     """
-    #     dataMat = []
-    #     labelMat = []
-    #     fr = open(fileName)
-    #     for line in fr.readlines():
-    #         lineArr = line.strip().split('\t')
-    #         dataMat.append([float(lineArr[0]), float(lineArr[1])])
-    #         labelMat.append(float(lineArr[2]))
-    #     return dataMat, labelMat
-    # x, y = loadDataSet(r'..\ttest\svc_data.txt')
-    # svc = SupportVectorClassifier()
-    # svc.fit(np.array(x), np.array(y))
-    # print(svc.alpha)
-    # svc.plot_2d_SVM()
+    # bc = load_breast_cancer()
+    # X = bc.data
+    # y = bc.target
+    # train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
+    # svc = SupportVectorClassifier(max_iter=2000, tol=1e-4, C=20)
+    # svc.fit(train_X, train_y)
+    # y_pred = svc.predict(test_X)
+    # print(y_pred.sum())
+    # print(accuracy_score(test_y, y_pred))
+    # print('-'*20)
+    # sk_svc = LinearSVC(C=0.6, max_iter=10000, random_state=42, tol=1e-3).fit(train_X, train_y)
+    # print(sk_svc.score(test_X, test_y))
+    def loadDataSet(fileName):
+        """
+        加载数据集
+        :param fileName:
+        :return:
+        """
+        dataMat = []
+        labelMat = []
+        fr = open(fileName)
+        for line in fr.readlines():
+            lineArr = line.strip().split('\t')
+            dataMat.append([float(lineArr[0]), float(lineArr[1])])
+            labelMat.append(float(lineArr[2]))
+        return dataMat, labelMat
+    x, y = loadDataSet(r'..\ttest\svc_data.txt')
+    svc = SupportVectorClassifier()
+    svc.fit(np.array(x), np.array(y))
+    print(svc.alpha)
+    svc.plot_2d_SVM()
     
 
 

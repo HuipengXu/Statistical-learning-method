@@ -3,23 +3,45 @@
 # @Blog    : https://brycexxx.github.io/
 
 import numpy as np
-from typing import Tuple
 from sklearn.preprocessing import LabelBinarizer
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
-import random
 
 class SupportVectorClassifier:
-    """
-    线性支持向量机
-    """
-    def __init__(self, tol: float=1e-3, C: float=1.0, max_iter: int=1000):
+
+    def __init__(self, kernel='rbf', sigma: float=1.0, tol: float=1e-3, C: float=1.0, max_iter: int=1000):
+        self.kernel = kernel
+        self.sigma = sigma
         self.tol = tol
         self.C = C
         self.max_iter = max_iter
 
+    def _k_x_X(self, x: np.ndarray):
+        inner_product = None
+        if self.kernel == 'rbf':
+            inner_product = 1.0 / np.exp(((self.X - x.reshape(1, self.n_features)) ** 2).sum(axis=1) / (2 * self.sigma))
+        elif self.kernel == 'poly':
+            pass
+        elif self.kernel == 'linear':
+            inner_product = np.dot(x, self.X.T)
+        else:
+            raise KeyError('no such kernel function')
+        return inner_product
+
+    def _k_xi_xj(self, xi, xj):
+        k_xi_xj = None
+        if self.kernel == 'rbf':
+            k_xi_xj = 1.0 / np.exp(((xi - xj) ** 2).sum() / (2 * self.sigma))
+        elif self.kernel == 'poly':
+            pass
+        elif self.kernel == 'linear':
+            k_xi_xj = np.dot(xi, xj.T)
+        else:
+            raise KeyError('no such kernel function')
+        return k_xi_xj
+
     def _gx(self, x: np.ndarray) -> float:
-        gx = np.dot(np.dot(x, self.X.T), self.y * self.alpha)[0] + self.b
+        gx = np.dot(self._k_x_X(x), self.y * self.alpha)[0] + self.b
         return gx
 
     def _Ei(self, i: int) -> float:
@@ -57,11 +79,12 @@ class SupportVectorClassifier:
                 L = max(.0, alpha2 - alpha1)
                 H = min(self.C, self.C + alpha2 - alpha1)
             if L == H: print('L == H'); return 0
-            K_11 = np.dot(self.X[idx1, np.newaxis], self.X[idx1][:, np.newaxis])
-            K_22 = np.dot(self.X[idx2, np.newaxis], self.X[idx2][:, np.newaxis])
-            K_12 = np.dot(self.X[idx1, np.newaxis], self.X[idx2][:, np.newaxis])
+            K_11 = self._k_xi_xj(self.X[idx1], self.X[idx1])
+            K_22 = self._k_xi_xj(self.X[idx2], self.X[idx2])
+            K_12 = self._k_xi_xj(self.X[idx1], self.X[idx2])
             eta = K_11 + K_22 - 2 * K_12
             s = self.y[idx1] * self.y[idx2]
+            # 更新后的 alpha2
             if eta <= 0:
                 f1 = self.y[idx1] * (E1 + self.b) - alpha1 * K_11 - s * alpha2 * K_12
                 f2 = self.y[idx2] * (E2 + self.b) - s * alpha1 * K_12 - alpha2 * K_22
@@ -77,7 +100,6 @@ class SupportVectorClassifier:
                     alpha2_new = alpha2
             else:
                 alpha2_new_unc = alpha2 + self.y[idx2] * (E1 - E2) / eta
-                # 更新后的 alpha2
                 if alpha2_new_unc > H: alpha2_new = H
                 elif alpha2_new_unc < L: alpha2_new = L
                 else: alpha2_new = alpha2_new_unc
@@ -104,6 +126,7 @@ class SupportVectorClassifier:
         self.b = .0
         lb = LabelBinarizer(neg_label=-1)
         self.y = lb.fit_transform(self.y)
+        self.classes_ = lb.classes_
         self.n_samples, self.n_features = self.X.shape
         self.alpha = np.zeros((self.n_samples, 1))
         self.Ei = np.zeros_like(self.alpha)
@@ -130,13 +153,14 @@ class SupportVectorClassifier:
 
     def predict(self, X: np.ndarray):
         gx = np.array([self._gx(x) for x in X])
-        ret = np.where(gx>=0, 1, 0)
+        ret = np.where(gx>=0, self.classes_[-1], self.classes_[0])
         return ret.squeeze()
 
     def plot_2d_SVM(self):
         pos_idx = (self.y == 1).squeeze()
         neg_idx = (self.y == -1).squeeze()
         sv_idx = (self.alpha != 0).squeeze()
+        print(self.X[sv_idx])
 
         w = np.dot(self.X.T, np.multiply(self.alpha, self.y))
 
@@ -145,54 +169,97 @@ class SupportVectorClassifier:
         plt.scatter(self.X[neg_idx][:, 0], self.X[neg_idx][:, 1], c='green', label='neg')
         ax = plt.gca()
         for sv_x, sv_y in self.X[sv_idx]:
-            circle = Circle((sv_x, sv_y), radius=0.5, facecolor='none', edgecolor=(0,0.8,0.8), linewidth=3, alpha=0.5)
+            circle = Circle((sv_x, sv_y), radius=0.05, facecolor='none', edgecolor=(0,0.8,0.8), linewidth=3, alpha=0.5)
             ax.add_artist(circle)
         x = np.arange(self.X[:, 0].min(), self.X[:, 0].max(), 0.1)
         y = - (w[0] * x + self.b) / w[1]
-        plt.plot(x, y.squeeze(), label='separate hyperplane')
-        plt.xlim(-2, 12)
-        plt.ylim(-8, 6)
+        # plt.plot(x, y.squeeze(), label='separate hyperplane')
+        # plt.plot(self.X[sv_idx][:, 0], self.X[sv_idx][:, 1])
         plt.legend(frameon=False)
         plt.show()
 
+
 if __name__ == "__main__":
     from sklearn.datasets import load_breast_cancer
-    from sklearn.svm import LinearSVC
+    from sklearn.svm import SVC
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import accuracy_score
+
 
     # bc = load_breast_cancer()
     # X = bc.data
     # y = bc.target
+    # # two_dim = PCA(n_components=2, random_state=0).fit_transform(X)
+    # # pos_idx = y == 1
+    # # neg_idx = y != 1
+    # # plt.figure()
+    # # plt.scatter(X[pos_idx][:, 0], X[pos_idx][:, 1], c='red', label='pos')
+    # # plt.scatter(X[neg_idx][:, 0], X[neg_idx][:, 1], c='green', label='neg')
+    # # plt.legend(frameon=False)
+    # # plt.show()
+    # # exit()
     # train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
-    # svc = SupportVectorClassifier(max_iter=2000, tol=1e-4, C=20)
+    # # standard_scaler = StandardScaler().fit(train_X)
+    # # train_X = standard_scaler.transform(train_X)
+    # # test_X = standard_scaler.transform(test_X)
+    # svc = SupportVectorClassifier(kernel='rbf', sigma=0.61, max_iter=10000, tol=1e-5, C=0.31)
     # svc.fit(train_X, train_y)
     # y_pred = svc.predict(test_X)
-    # print(y_pred.sum())
-    # print(accuracy_score(test_y, y_pred))
-    # print('-'*20)
-    # sk_svc = LinearSVC(C=0.6, max_iter=10000, random_state=42, tol=1e-3).fit(train_X, train_y)
-    # print(sk_svc.score(test_X, test_y))
-    def loadDataSet(fileName):
-        """
-        加载数据集
-        :param fileName:
-        :return:
-        """
-        dataMat = []
-        labelMat = []
+    # train_y_pred = svc.predict(train_X)
+    # print("train set accuracy is %.4f" % accuracy_score(train_y, train_y_pred))
+    # print("test set accuracy is %.4f" %accuracy_score(test_y, y_pred))
+    # sk_svc = SVC(max_iter=80000, random_state=42, gamma=100, tol=1e-4, C=0.7).fit(train_X, train_y)
+    # print("train set accuracy apply scikit-learn is %.4f" % sk_svc.score(train_X, train_y))
+    # print("test set accuracy apply scikit-learn is %.4f" % sk_svc.score(test_X, test_y))
+    # def loadDataSet(fileName):
+    #     """
+    #     加载数据集
+    #     :param fileName:
+    #     :return:
+    #     """
+    #     dataMat = []
+    #     labelMat = []
+    #     fr = open(fileName)
+    #     for line in fr.readlines():
+    #         lineArr = line.strip().split('\t')
+    #         dataMat.append([float(lineArr[0]), float(lineArr[1])])
+    #         labelMat.append(float(lineArr[2]))
+    #     return dataMat, labelMat
+    #
+    #
+    def loadImages(fileName):
+        '''
+        加载文件
+        :param fileName:要加载的文件路径
+        :return: 数据集和标签集
+        '''
+        # 存放数据及标记
+        dataArr = []
+        labelArr = []
         fr = open(fileName)
         for line in fr.readlines():
-            lineArr = line.strip().split('\t')
-            dataMat.append([float(lineArr[0]), float(lineArr[1])])
-            labelMat.append(float(lineArr[2]))
-        return dataMat, labelMat
-    x, y = loadDataSet(r'..\ttest\svc_data.txt')
-    svc = SupportVectorClassifier()
+            curLine = line.strip().split(',')
+            dataArr.append([int(num) / 255 for num in curLine[1:]])
+            if int(curLine[0]) == 0:
+                labelArr.append(1)
+            else:
+                labelArr.append(-1)
+        # 返回数据集和标记
+        return dataArr, labelArr
+    x, y = loadImages(r'..\ttest\Mnist\mnist_train\mnist_train.csv')
+    svc = SupportVectorClassifier(kernel='rbf', sigma=0.099, C=1, tol=0.0001, max_iter=10000)
     svc.fit(np.array(x), np.array(y))
-    print(svc.alpha)
-    svc.plot_2d_SVM()
-    
+    # print(svc.alpha)
+    # svc.plot_2d_SVM()
+    pred_train_y = svc.predict(np.array(x))
+    print(pred_train_y)
+    test_x, test_y = loadImages(r'..\ttest\Mnist\mnist_test\mnist_test.csv')
+    pred_test_y = svc.predict(np.array(test_x))
+    print(accuracy_score(np.array(y), pred_train_y))
+    print(accuracy_score(np.array(test_y), pred_test_y))
+
 
 
 

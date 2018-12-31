@@ -16,12 +16,9 @@ class SupportVectorClassifier:
         self.C = C
         self.max_iter = max_iter
 
-    def _kernel_trans(self, x: np.ndarray):
-        inner_product = None
+    def _kernel_trans(self, x: np.ndarray) -> np.ndarray:
         if self.kernel == 'rbf':
             inner_product = 1.0 / np.exp(((self.X.T - x.reshape(self.n_features, 1)) ** 2).sum(axis=0) / (2 * self.sigma))
-        elif self.kernel == 'poly':
-            pass
         elif self.kernel == 'linear':
             inner_product = np.dot(x, self.X.T)
         else:
@@ -58,7 +55,7 @@ class SupportVectorClassifier:
                 max_deltaE = deltaE
         return idx2
 
-    def _inner_loop(self, idx1: int):
+    def _inner_loop(self, idx1: int) -> int:
         E1 = self.Ei[idx1]
         alpha1 = self.alpha[idx1].copy()
         r1 = E1 * self.y[idx1]
@@ -187,31 +184,31 @@ if __name__ == "__main__":
     from sklearn.metrics import accuracy_score
 
 
-    bc = load_breast_cancer()
-    X = bc.data
-    y = bc.target
-    # two_dim = PCA(n_components=2, random_state=0).fit_transform(X)
-    # pos_idx = y == 1
-    # neg_idx = y != 1
-    # plt.figure()
-    # plt.scatter(X[pos_idx][:, 0], X[pos_idx][:, 1], c='red', label='pos')
-    # plt.scatter(X[neg_idx][:, 0], X[neg_idx][:, 1], c='green', label='neg')
-    # plt.legend(frameon=False)
-    # plt.show()
-    # exit()
-    train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
-    # standard_scaler = StandardScaler().fit(train_X)
-    # train_X = standard_scaler.transform(train_X)
-    # test_X = standard_scaler.transform(test_X)
-    svc = SupportVectorClassifier(kernel='rbf', sigma=0.61, max_iter=10000, tol=1e-5, C=0.31)
-    svc.fit(train_X, train_y)
-    y_pred = svc.predict(test_X)
-    train_y_pred = svc.predict(train_X)
-    print("train set accuracy is %.4f" % accuracy_score(train_y, train_y_pred))
-    print("test set accuracy is %.4f" %accuracy_score(test_y, y_pred))
-    sk_svc = SVC(max_iter=80000, random_state=42, gamma=100, tol=1e-4, C=0.7).fit(train_X, train_y)
-    print("train set accuracy apply scikit-learn is %.4f" % sk_svc.score(train_X, train_y))
-    print("test set accuracy apply scikit-learn is %.4f" % sk_svc.score(test_X, test_y))
+    # bc = load_breast_cancer()
+    # X = bc.data
+    # y = bc.target
+    # # two_dim = PCA(n_components=2, random_state=0).fit_transform(X)
+    # # pos_idx = y == 1
+    # # neg_idx = y != 1
+    # # plt.figure()
+    # # plt.scatter(X[pos_idx][:, 0], X[pos_idx][:, 1], c='red', label='pos')
+    # # plt.scatter(X[neg_idx][:, 0], X[neg_idx][:, 1], c='green', label='neg')
+    # # plt.legend(frameon=False)
+    # # plt.show()
+    # # exit()
+    # train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
+    # # standard_scaler = StandardScaler().fit(train_X)
+    # # train_X = standard_scaler.transform(train_X)
+    # # test_X = standard_scaler.transform(test_X)
+    # svc = SupportVectorClassifier(kernel='rbf', sigma=0.61, max_iter=10000, tol=1e-5, C=0.31)
+    # svc.fit(train_X, train_y)
+    # y_pred = svc.predict(test_X)
+    # train_y_pred = svc.predict(train_X)
+    # print("train set accuracy is %.4f" % accuracy_score(train_y, train_y_pred))
+    # print("test set accuracy is %.4f" %accuracy_score(test_y, y_pred))
+    # sk_svc = SVC(max_iter=80000, random_state=42, gamma=100, tol=1e-4, C=0.7).fit(train_X, train_y)
+    # print("train set accuracy apply scikit-learn is %.4f" % sk_svc.score(train_X, train_y))
+    # print("test set accuracy apply scikit-learn is %.4f" % sk_svc.score(test_X, test_y))
     # def loadDataSet(fileName):
     #     """
     #     加载数据集
@@ -228,36 +225,35 @@ if __name__ == "__main__":
     #     return dataMat, labelMat
     #
     #
-    # def loadImages(fileName):
-    #     '''
-    #     加载文件
-    #     :param fileName:要加载的文件路径
-    #     :return: 数据集和标签集
-    #     '''
-    #     # 存放数据及标记
-    #     dataArr = []
-    #     labelArr = []
-    #     fr = open(fileName)
-    #     for line in fr.readlines():
-    #         curLine = line.strip().split(',')
-    #         dataArr.append([int(num) / 255 for num in curLine[1:]])
-    #         if int(curLine[0]) == 0:
-    #             labelArr.append(1)
-    #         else:
-    #             labelArr.append(-1)
-    #     # 返回数据集和标记
-    #     return dataArr, labelArr
-    # x, y = loadImages(r'..\ttest\Mnist\mnist_train\mnist_train.csv')
-    # svc = SupportVectorClassifier(kernel='rbf', sigma=0.099, C=1, tol=0.0001, max_iter=10000)
-    # svc.fit(np.array(x)[:1000], np.array(y)[:1000])
-    # # print(svc.alpha)
-    # # svc.plot_2d_SVM()
-    # pred_train_y = svc.predict(np.array(x)[:1000])
-    # print(pred_train_y)
-    # test_x, test_y = loadImages(r'..\ttest\Mnist\mnist_test\mnist_test.csv')
-    # pred_test_y = svc.predict(np.array(test_x)[:100])
-    # print(accuracy_score(np.array(y)[:1000], pred_train_y))
-    # print(accuracy_score(np.array(test_y)[:100], pred_test_y))
+    def loadImages(fileName):
+        '''
+        加载文件
+        :param fileName:要加载的文件路径
+        :return: 数据集和标签集
+        '''
+        # 存放数据及标记
+        dataArr = []
+        labelArr = []
+        fr = open(fileName)
+        for line in fr.readlines():
+            curLine = line.strip().split(',')
+            dataArr.append([int(num) / 255 for num in curLine[1:]])
+            if int(curLine[0]) == 0:
+                labelArr.append(1)
+            else:
+                labelArr.append(-1)
+        # 返回数据集和标记
+        return dataArr, labelArr
+    x, y = loadImages(r'..\ttest\Mnist\mnist_train\mnist_train.csv')
+    svc = SupportVectorClassifier(kernel='poly', sigma=0.099, C=0.5, tol=0.0001, max_iter=10000)
+    svc.fit(np.array(x)[:1000], np.array(y)[:1000])
+    # print(svc.alpha)
+    # svc.plot_2d_SVM()
+    pred_train_y = svc.predict(np.array(x)[:1000])
+    test_x, test_y = loadImages(r'..\ttest\Mnist\mnist_test\mnist_test.csv')
+    pred_test_y = svc.predict(np.array(test_x)[:100])
+    print(accuracy_score(np.array(y)[:1000], pred_train_y))
+    print(accuracy_score(np.array(test_y)[:100], pred_test_y))
 
 
 

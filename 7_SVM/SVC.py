@@ -25,8 +25,8 @@ class SupportVectorClassifier:
             raise KeyError('no such kernel function')
         return inner_product
 
-    def _init_kij(self, m: int) -> np.ndarray:
-        K = np.zeros((m, self.n_samples))
+    def _init_kij(self, m: int, n: int) -> np.ndarray:
+        K = np.zeros((m, n))
         for i in range(m):
             K[i, :] = self._kernel_trans(self.X[i])
         return K
@@ -119,7 +119,7 @@ class SupportVectorClassifier:
         self.y = lb.fit_transform(self.y)
         self.classes_ = lb.classes_
         self.n_samples, self.n_features = self.X.shape
-        self.K = self._init_kij(self.n_samples)
+        self.K = self._init_kij(self.n_samples, self.n_samples)
         self.alpha = np.zeros((self.n_samples, 1))
         self.Ei = np.zeros_like(self.alpha)
         for i in range(self.n_samples): self.Ei[i] = self._Ei(i)
@@ -141,11 +141,16 @@ class SupportVectorClassifier:
                 iter_ += 1
             if entire_set: entire_set = False
             elif alpha_pairs_changed == 0: entire_set = True
+        # 只保留支持向量
+        support_vector_idx = np.nonzero(self.alpha)[0]
+        self.X = self.X[support_vector_idx]
+        self.y = self.y[support_vector_idx]
+        self.alpha = self.alpha[support_vector_idx]
         return self
 
     def predict(self, X: np.ndarray):
         m = X.shape[0]
-        kij = np.zeros((m, self.n_samples))
+        kij = np.zeros((m, self.X.shape[0]))
         for i in range(m):
             kij[i, :] = self._kernel_trans(X[i])
         gx = np.array([self._gx(kij, i) for i in range(m)])
@@ -245,7 +250,7 @@ if __name__ == "__main__":
         # 返回数据集和标记
         return dataArr, labelArr
     x, y = loadImages(r'..\ttest\Mnist\mnist_train\mnist_train.csv')
-    svc = SupportVectorClassifier(kernel='poly', sigma=0.099, C=0.5, tol=0.0001, max_iter=10000)
+    svc = SupportVectorClassifier(kernel='rbf', sigma=200, C=0.04, tol=0.0001, max_iter=10000)
     svc.fit(np.array(x)[:1000], np.array(y)[:1000])
     # print(svc.alpha)
     # svc.plot_2d_SVM()

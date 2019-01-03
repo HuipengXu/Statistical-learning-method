@@ -1,6 +1,6 @@
 __pycache__/
 .idea/
 .vscode/
-4_naive_bayes/__pycache__/
-4_naive_bayes/corpus
+naive_bayes/__pycache__/
+naive_bayes/corpus
 ttest/

@@ -3,7 +3,9 @@
 # @Blog    : https://brycexxx.github.io/
 import numpy as np
 from typing import Tuple
-from 
+from decision_tree.decision_tree_regressor import Node
+from uuid import uuid1
+from sklearn.metrics import r2_score
 
 
 class BoostingSimpleTree:
@@ -52,9 +54,11 @@ class BoostingSimpleTree:
                 break
             self.tree_series.append(best_f_p)
             y_pred = self.predict(X)
-            squared_error = np.linalg.norm(y - y_pred) ** 2
-            print('training %d base tree, squared error: %.2f' % (i + 1, squared_error))
             r = y - y_pred
+            # squared_error = np.linalg.norm(r) ** 2
+            # print('training %d base tree, squared error: %.2f' % (i + 1, squared_error))
+            r2 = r2_score(y, y_pred)
+            print('training %d base tree, r2-score: %.2f' % (i + 1, r2))
         return self
 
     def predict(self, X: np.ndarray):
@@ -75,16 +79,25 @@ class BoostingDecisionTree:
         self.n_estimators = n_estimators
         self.max_depth = max_depth
 
-    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray):
+    def _split(self, x: np.ndarray, y: np.ndarray,
+               split_feature_index: int, split_point: float) \
+            -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        根据特征列和切分点将数据集分割为左右两部分
+        """
+        left_index = x[:, split_feature_index] <= split_point
+        right_index = x[:, split_feature_index] > split_point
+        return x[left_index, :], x[right_index, :], y[left_index], y[right_index]
+
+    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray, depth: int=0):
         """
         递归生成最小二乘回归树
         """
-        # 初始化最有分割点
+        # 初始化最优分割点
         best_feature = best_point = None
         pair = (best_feature, best_point)
         y_var = y.var()
-        # 是否进行预剪枝
-        min_loss = y_var * np.size(y) if self._is_pre_pruning else np.inf
+        min_loss = y_var * np.size(y)
         rows, features = X.shape
         # 如果样本数量少于 2 ，则停止分割，生成叶节点
         if rows < 2:
@@ -96,16 +109,11 @@ class BoostingDecisionTree:
             # 去重
             unique_point = np.unique(X[:, f])
             # 计算相邻元素中值作为分割点
-            split_point = [(unique_point[i] + unique_point[i+1]) / 2 for i in range(np.size(unique_point) - 1)]
-            # 添加第一个和最后一个作为分割点
-            split_point.insert(0, unique_point[0])
-            split_point.append(unique_point[-1])
+            split_point = [(unique_point[i] + unique_point[i+1]) / 2.0 for i in range(np.size(unique_point) - 1)]
             # 遍历分割点
             for p in split_point:
                 _, _, left_y, right_y = self._split(X, y, f, p)
-                left_var = left_y.var() * np.size(left_y) if np.size(left_y) else 0
-                right_var = right_y.var() * np.size(right_y) if np.size(right_y) else 0
-                loss = left_var + right_var
+                loss = left_y.var() * np.size(left_y) + right_y.var() * np.size(right_y)
                 if loss < min_loss:
                     best_feature, best_point = f, p
                     min_loss = loss
@@ -115,9 +123,50 @@ class BoostingDecisionTree:
         if best_feature is None:
             return root
         left_x, right_x, left_y, right_y = self._split(X, y, best_feature, best_point)
-        root._left = self._generate_regression_tree(left_x, left_y)
-        root._right = self._generate_regression_tree(right_x, right_y)
+        depth += 1
+        if depth <= self.max_depth:
+            root._left = self._generate_regression_tree(left_x, left_y, depth)
+            root._right = self._generate_regression_tree(right_x, right_y, depth)
         return root
+
+    def fit(self,X: np.ndarray, y: np.ndarray):
+        self.tree_series = []
+        r = y.copy()
+        for i in range(self.n_estimators):
+            depth = 0
+            root = self._generate_regression_tree(X, r, depth)
+            self.tree_series.append(root)
+            y_pred = self.predict(X)
+            r = y - y_pred
+            r2 = r2_score(y, y_pred)
+            print('training %d decision tree, r2-score: %.2f' % (i + 1, r2))
+        return self
+
+    def _predict_on_one_tree(self, X: np.ndarray, root: Node):
+        """
+        X: data to be predicted, shape = (n_samples, n_features)
+        """
+        ret = []
+        for x in X:
+            split_feature, split_point = root._best_pair
+            node = root
+            while node._left != None:
+                if x[split_feature] <= split_point:
+                    node = node._left
+                else:
+                    node = node._right
+                split_feature, split_point = node._best_pair
+            ret.append(node._val)
+        return np.array(ret)
+
+    def predict(self, X: np.ndarray):
+        m = X.shape[0]
+        y_pred = np.zeros((m, ))
+        for root in self.tree_series:
+            output = self._predict_on_one_tree(X, root)
+            y_pred += output
+        return y_pred
+
 
 if __name__ == "__main__":
     # 统计学习方法算例
@@ -138,10 +187,12 @@ if __name__ == "__main__":
     train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
     bt = BoostingSimpleTree(n_estimators=18).fit(train_X, train_y)
     y_pred = bt.predict(test_X)
-    print(r2_score(test_y, y_pred))
-    print('-' * 10)
+    print("boosting simple tree,  r2-score on test set: %.2f" % r2_score(test_y, y_pred))
     abr = AdaBoostRegressor(
         DecisionTreeRegressor(max_depth=3, min_samples_split=20, min_samples_leaf=5),
         loss='linear', n_estimators=800, learning_rate=0.5, random_state=0
     ).fit(train_X, train_y)
-    print(abr.score(test_X, test_y))
+    print("AdaBoostRegressor of sklearn, r2-score on test set: %.2f" % abr.score(test_X, test_y))
+    print('-' * 10)
+    bdt = BoostingDecisionTree(n_estimators=20, max_depth=5).fit(train_X, train_y)
+    print("boosting decision tree,  r2-score on test set: %.2f"% r2_score(test_y, bdt.predict(test_X)))

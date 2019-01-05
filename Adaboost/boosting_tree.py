@@ -3,12 +3,13 @@
 # @Blog    : https://brycexxx.github.io/
 import numpy as np
 from typing import Tuple
+from sklearn.preprocessing import LabelBinarizer
 from decision_tree.decision_tree_regressor import Node
 from uuid import uuid1
 from sklearn.metrics import r2_score
 
 
-class BoostingSimpleTree:
+class BoostingStumpRegressor:
     """
     弱分类器是一个根节点直接连接
     两个叶节点的简单回归决策树
@@ -16,6 +17,8 @@ class BoostingSimpleTree:
 
     def __init__(self, n_estimators: int = 50):
         self.n_estimators = n_estimators
+        self.tree_series = []
+        self.n_features = 0
 
     def _split(self, x: np.ndarray, y: np.ndarray,
                split_feature_index: int, split_point: float) \
@@ -27,7 +30,7 @@ class BoostingSimpleTree:
         right_index = x[:, split_feature_index] > split_point
         return x[left_index, :], x[right_index, :], y[left_index], y[right_index]
 
-    def _base_tree(self, X: np.ndarray, r: np.ndarray) -> tuple:
+    def _weak_regressor(self, X: np.ndarray, r: np.ndarray) -> tuple:
         # best_f_p = (feature_index, split_point, left_output, right_output)
         best_f_p = (None, None, None, None)
         min_loss = r.var() * np.size(r)
@@ -44,12 +47,11 @@ class BoostingSimpleTree:
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         n_samples, self.n_features = X.shape
-        self.tree_series = []
         # 残差
         # y = y.reshape(-1, 1)
         r = y.copy()
         for i in range(self.n_estimators):
-            best_f_p = self._base_tree(X, r)
+            best_f_p = self._weak_regressor(X, r)
             if best_f_p[0] is None:
                 break
             self.tree_series.append(best_f_p)
@@ -71,11 +73,83 @@ class BoostingSimpleTree:
         return y
 
 
-class BoostingDecisionTree:
+class BoostingStumpClassifier:
+    """
+    弱分类器为决策树桩
+    """
+
+    def __init__(self, n_estimators: int = 50):
+        self.n_estimators = n_estimators
+        self.n_samples = 0
+        self.n_features = 0
+        self.all_classifier = []
+        self.classes_ = None
+
+    def _weak_classifier(self, X: np.ndarray, y: np.ndarray, D: np.ndarray):
+        min_error = 1
+        best_classifier = {}
+        for f in range(self.n_features):
+            unique_x = np.unique(X[:, f])
+            for p in unique_x:
+                for not_equal in ['lt', 'gt']:
+                    G = np.ones((self.n_samples,))
+                    if not_equal == 'lt':
+                        G[X[:, f] <= p] = -1.0
+                    else:
+                        G[X[:, f] > p] = -1.0
+                    error_idx = G != y
+                    error_rate = D[error_idx].sum()
+                    if error_rate < min_error:
+                        min_error = error_rate
+                        best_classifier['f'] = f
+                        best_classifier['p'] = p
+                        best_classifier['not_equal'] = not_equal
+                        best_classifier['error_rate'] = min_error
+        return best_classifier
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        lb = LabelBinarizer(neg_label=-1)
+        y = lb.fit_transform(y).squeeze()
+        self.classes_ = lb.classes_
+        self.n_samples, self.n_features = X.shape
+        # 初始化权重 D
+        D = np.ones((self.n_samples, 1)) / self.n_samples
+        for i in range(self.n_estimators):
+            clf = self._weak_classifier(X, y, D)
+            if clf['error_rate'] == .0:
+                break
+            alpha = 0.5 * np.log((1 - clf['error_rate']) / clf['error_rate'])
+            self.all_classifier.append((clf, alpha))
+            # 更新权重 D
+            for j in range(self.n_samples):
+                if clf['not_equal'] == 'lt':
+                    g = -1.0 if X[j, clf['f']] <= clf['p'] else 1.0
+                else:
+                    g = -1.0 if X[j, clf['f']] > clf['p'] else 1.0
+                D[j] *= np.exp(-alpha * y[j] * g)
+            D /= D.sum()
+        return self
+
+    def predict(self, X: np.ndarray):
+        m = X.shape[0]
+        ret = np.zeros((m,))
+        for i in range(m):
+            for clf, alpha in self.all_classifier:
+                if clf['not_equal'] == 'lt':
+                    g = -1.0 if X[i, clf['f']] <= clf['p'] else 1.0
+                else:
+                    g = -1.0 if X[i, clf['f']] > clf['p'] else 1.0
+                ret[i] += alpha * g
+        ret = np.where(ret >= 0, self.classes_[-1], self.classes_[0])
+        return ret
+
+
+class BoostingDecisionTreeRegressor:
     """
     以回归决策树作为弱分类器
     """
-    def __init__(self, n_estimators: int=50, max_depth: int=3):
+
+    def __init__(self, n_estimators: int = 50, max_depth: int = 3):
         self.n_estimators = n_estimators
         self.max_depth = max_depth
 
@@ -89,7 +163,7 @@ class BoostingDecisionTree:
         right_index = x[:, split_feature_index] > split_point
         return x[left_index, :], x[right_index, :], y[left_index], y[right_index]
 
-    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray, depth: int=0):
+    def _generate_regression_tree(self, X: np.ndarray, y: np.ndarray, depth: int = 0):
         """
         递归生成最小二乘回归树
         """
@@ -109,7 +183,7 @@ class BoostingDecisionTree:
             # 去重
             unique_point = np.unique(X[:, f])
             # 计算相邻元素中值作为分割点
-            split_point = [(unique_point[i] + unique_point[i+1]) / 2.0 for i in range(np.size(unique_point) - 1)]
+            split_point = [(unique_point[i] + unique_point[i + 1]) / 2.0 for i in range(np.size(unique_point) - 1)]
             # 遍历分割点
             for p in split_point:
                 _, _, left_y, right_y = self._split(X, y, f, p)
@@ -129,7 +203,7 @@ class BoostingDecisionTree:
             root._right = self._generate_regression_tree(right_x, right_y, depth)
         return root
 
-    def fit(self,X: np.ndarray, y: np.ndarray):
+    def fit(self, X: np.ndarray, y: np.ndarray):
         self.tree_series = []
         r = y.copy()
         for i in range(self.n_estimators):
@@ -150,7 +224,7 @@ class BoostingDecisionTree:
         for x in X:
             split_feature, split_point = root._best_pair
             node = root
-            while node._left != None:
+            while node._left is not None:
                 if x[split_feature] <= split_point:
                     node = node._left
                 else:
@@ -161,7 +235,7 @@ class BoostingDecisionTree:
 
     def predict(self, X: np.ndarray):
         m = X.shape[0]
-        y_pred = np.zeros((m, ))
+        y_pred = np.zeros((m,))
         for root in self.tree_series:
             output = self._predict_on_one_tree(X, root)
             y_pred += output
@@ -176,23 +250,38 @@ if __name__ == "__main__":
     # bt = BoostingTree(n_estimators=6)
     # bt.fit(x, y)
 
-    from sklearn.datasets import load_boston
-    from sklearn.metrics import r2_score
-    from sklearn.model_selection import train_test_split
-    from sklearn.ensemble import AdaBoostRegressor
+    from sklearn.datasets import load_boston, load_breast_cancer
+    from sklearn.metrics import r2_score, accuracy_score
+    from sklearn.model_selection import train_test_split, GridSearchCV
+    from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor, GradientBoostingRegressor
     from sklearn.tree import DecisionTreeRegressor
 
-    boston = load_boston()
+    boston = load_breast_cancer()
     X, y = boston.data, boston.target
     train_X, test_X, train_y, test_y = train_test_split(X, y, random_state=0)
-    bt = BoostingSimpleTree(n_estimators=18).fit(train_X, train_y)
-    y_pred = bt.predict(test_X)
-    print("boosting simple tree,  r2-score on test set: %.2f" % r2_score(test_y, y_pred))
-    abr = AdaBoostRegressor(
-        DecisionTreeRegressor(max_depth=3, min_samples_split=20, min_samples_leaf=5),
-        loss='linear', n_estimators=800, learning_rate=0.5, random_state=0
-    ).fit(train_X, train_y)
-    print("AdaBoostRegressor of sklearn, r2-score on test set: %.2f" % abr.score(test_X, test_y))
-    print('-' * 10)
-    bdt = BoostingDecisionTree(n_estimators=20, max_depth=5).fit(train_X, train_y)
-    print("boosting decision tree,  r2-score on test set: %.2f"% r2_score(test_y, bdt.predict(test_X)))
+    # bt = BoostingStumpRegressor(n_estimators=18).fit(train_X, train_y)
+    # y_pred = bt.predict(test_X)
+    # print("boosting simple tree,  r2-score on test set: %.2f" % r2_score(test_y, y_pred))
+    # bdt = BoostingDecisionTreeRegressor(n_estimators=250, max_depth=2).fit(train_X, train_y)
+    # print("boosting decision tree,  r2-score on test set: %.2f" % r2_score(test_y, bdt.predict(test_X)))
+    # abr = AdaBoostRegressor(
+    #     DecisionTreeRegressor(max_depth=3, min_samples_split=20, min_samples_leaf=5),
+    #     loss='linear', n_estimators=80, learning_rate=0.5, random_state=0
+    # ).fit(train_X, train_y)
+    # print("AdaBoostRegressor of sklearn, r2-score on test set: %.2f" % abr.score(test_X, test_y))
+    # # rf = RandomForestRegressor(n_estimators=35, max_depth=20, random_state=0).fit(train_X, train_y)
+    # # print("random forest,  r2-score on test set: %.2f" % rf.score(test_X, test_y))
+    # gbr = GradientBoostingRegressor(n_estimators=152, max_depth=2, min_samples_split=2, random_state=0,
+    #                                 learning_rate=0.18).fit(train_X, train_y)
+    # print("gradient boosting regressor,  r2-score on test set: %.2f" % gbr.score(test_X, test_y))
+    # # rf = GradientBoostingRegressor(random_state=42)
+    # # parameters = {'loss': ['lad', 'ls', 'huber'], 'n_estimators': [150, 152, 154], 'max_depth': [2, 3, 5], 'min_samples_split': [2, 4, 6], 'learning_rate': [0.17, 0.18, 0.19]}
+    # # rgr = GridSearchCV(rf, parameters, cv=5)
+    # # rgr.fit(train_X, train_y)
+    # # print(rgr.cv_results_)
+    # # print(rgr.best_estimator_)
+    # # print(rgr.best_score_)
+    # # print(rgr.best_params_)
+    bsc = BoostingStumpClassifier().fit(train_X, train_y)
+    print(
+        'Boosting Stump Classifier, accuracy accuracy on test set: %.2f' % accuracy_score(test_y, bsc.predict(test_X)))

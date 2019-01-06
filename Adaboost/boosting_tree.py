@@ -6,7 +6,7 @@ from typing import Tuple
 from sklearn.preprocessing import LabelBinarizer
 from decision_tree.decision_tree_regressor import Node
 from uuid import uuid1
-from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
 
 
 class BoostingStumpRegressor:
@@ -82,7 +82,7 @@ class BoostingStumpClassifier:
         self.n_estimators = n_estimators
         self.n_samples = 0
         self.n_features = 0
-        self.all_classifier = []
+        self.all_classifiers = []
         self.classes_ = None
 
     def _weak_classifier(self, X: np.ndarray, y: np.ndarray, D: np.ndarray):
@@ -116,32 +116,71 @@ class BoostingStumpClassifier:
         D = np.ones((self.n_samples, 1)) / self.n_samples
         for i in range(self.n_estimators):
             clf = self._weak_classifier(X, y, D)
+            # print('after training %d estimator, error rate is %.3f' % (i, clf['error_rate']))
             if clf['error_rate'] == .0:
                 break
-            alpha = 0.5 * np.log((1 - clf['error_rate']) / clf['error_rate'])
-            self.all_classifier.append((clf, alpha))
+            alpha = 0.5 * np.log((1 - clf['error_rate']) / (clf['error_rate'] + 1e-9))
+            # print('alpha: %.3f' % alpha)
+            self.all_classifiers.append((clf, alpha))
+            y_pred = np.where(self.predict(X) == 1, 1, -1)
+            print('after training %d estimator, total error rate: %.4f' % (i, (y_pred != y).sum() / self.n_samples))
             # 更新权重 D
             for j in range(self.n_samples):
                 if clf['not_equal'] == 'lt':
                     g = -1.0 if X[j, clf['f']] <= clf['p'] else 1.0
                 else:
                     g = -1.0 if X[j, clf['f']] > clf['p'] else 1.0
+                # print(y[j], g)
+                # print('before: %.5f' % D[j])
                 D[j] *= np.exp(-alpha * y[j] * g)
+                # print('after: %.5f' % D[j])
             D /= D.sum()
         return self
 
-    def predict(self, X: np.ndarray):
+    def decision_function(self, X: np.ndarray):
         m = X.shape[0]
         ret = np.zeros((m,))
         for i in range(m):
-            for clf, alpha in self.all_classifier:
+            for clf, alpha in self.all_classifiers:
                 if clf['not_equal'] == 'lt':
                     g = -1.0 if X[i, clf['f']] <= clf['p'] else 1.0
                 else:
                     g = -1.0 if X[i, clf['f']] > clf['p'] else 1.0
                 ret[i] += alpha * g
+        return ret
+
+    def predict(self, X: np.ndarray):
+        ret = self.decision_function(X)
         ret = np.where(ret >= 0, self.classes_[-1], self.classes_[0])
         return ret
+
+    def roc_auc(self, y_true: np.ndarray, y_score: np.ndarray):
+        unique_y = np.unique(y_score)
+        threshold = [(unique_y[i] + unique_y[i + 1]) / 2.0 for i in range(np.size(unique_y) - 1)]
+        tpr = []
+        fpr = []
+        for t in threshold:
+            y_pred = np.where(y_score >= t, self.classes_[-1], self.classes_[0])
+            pos = (y_true == self.classes_[-1])
+            pos_pred = (y_pred == self.classes_[-1])
+            tp = (pos & pos_pred).sum()
+            fn = pos.sum() - tp
+            fp = pos_pred.sum() - tp
+            neg = (y_true == self.classes_[0])
+            neg_pred = (y_pred == self.classes_[0])
+            tn = (neg & neg_pred).sum()
+            tpr.append(tp / (tp + fn))
+            fpr.append(fp / (tn + fp))
+        plt.figure()
+        plt.plot(fpr, tpr, label='roc')
+        plt.plot([0, 1], [0, 1], label='random guess')
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.xlabel("false positive rate")
+        plt.ylabel("true positive rate")
+        plt.title('ROC curve for AdaBoost')
+        plt.legend(frameon=False)
+        plt.show()
 
 
 class BoostingDecisionTreeRegressor:
@@ -255,6 +294,7 @@ if __name__ == "__main__":
     from sklearn.model_selection import train_test_split, GridSearchCV
     from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor, GradientBoostingRegressor
     from sklearn.tree import DecisionTreeRegressor
+    import pandas as pd
 
     boston = load_breast_cancer()
     X, y = boston.data, boston.target
@@ -282,6 +322,36 @@ if __name__ == "__main__":
     # # print(rgr.best_estimator_)
     # # print(rgr.best_score_)
     # # print(rgr.best_params_)
-    bsc = BoostingStumpClassifier().fit(train_X, train_y)
-    print(
-        'Boosting Stump Classifier, accuracy accuracy on test set: %.2f' % accuracy_score(test_y, bsc.predict(test_X)))
+    # bsc = BoostingStumpClassifier().fit(train_X, train_y)
+    # print(
+    #     'Boosting Stump Classifier, accuracy score on test set: %.3f' % accuracy_score(test_y, bsc.predict(test_X)))
+    def loadDataSet(fileName):
+        numFeat = len(open(fileName).readline().split('\t'))
+        dataMat = []
+        labelMat = []
+        fr = open(fileName)
+        for line in fr.readlines():
+            lineArr = []
+            curLine = line.strip().split('\t')
+            for i in range(numFeat - 1):
+                lineArr.append(float(curLine[i]))
+            dataMat.append(lineArr)
+            labelMat.append(float(curLine[-1]))
+        return np.array(dataMat), np.array(labelMat)
+
+
+    def data_processing(filename):
+        data = pd.read_csv(filename, sep='\s+', header=None)
+        for i in data.columns:
+            idx = (data[i] == .0).tolist()
+            data.iloc[idx, i] = data[i].mean()
+        data_array = data.values
+        return data_array[:, 0: -1], data_array[:, -1]
+
+
+    X, y = loadDataSet('..\\ttest\\horseColicTraining2.txt')
+    bsc = BoostingStumpClassifier(n_estimators=10).fit(X, y)
+    y_score = bsc.decision_function(X)
+    bsc.roc_auc(y, y_score)
+    # X_test, y_test = loadDataSet('..\\ttest\\horseColicTest2.txt')
+    # print("Boosting Stump Classifier, accuracy score on test set: %.3f" % accuracy_score(y_test, bsc.predict(X_test)))

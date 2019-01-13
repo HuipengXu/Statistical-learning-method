@@ -3,6 +3,7 @@
 # @Blog    : https://brycexxx.github.io/
 import numpy as np
 from typing import Optional
+from warnings import warn
 
 
 class HiddenMarkovModel:
@@ -22,6 +23,24 @@ class HiddenMarkovModel:
         self.max_iter = max_iter
         self.random_state = random_state
 
+    def simulate(self, T: int):
+        """
+        生成观测序列
+        借鉴于 http://www.hankcs.com/ml/hidden-markov-model.html
+        """
+
+        def draw_from(probs):
+            return np.where(np.random.multinomial(1, probs) == 1)[0][0]
+
+        observations = np.zeros(T, dtype=int)
+        states = np.zeros(T, dtype=int)
+        states[0] = draw_from(self.start_prob)
+        observations[0] = draw_from(self.obs_prob[states[0], :])
+        for t in range(1, T):
+            states[t] = draw_from(self.transmat_prob[states[t - 1], :])
+            observations[t] = draw_from(self.obs_prob[states[t], :])
+        return observations, states
+
     def _forward_prob_dist(self, obs_seq: np.ndarray):
         length = np.size(obs_seq)
         self.n_states = self.start_prob.shape[0]
@@ -38,22 +57,21 @@ class HiddenMarkovModel:
     def _backward_prob_dist(self, obs_seq: np.ndarray):
         length = np.size(obs_seq)
         self.n_states = self.start_prob.shape[0]
-        beta = np.ones((length + 1, self.n_states))
-        for i in range(length - 1, 0, -1):
-            beta[i, :] = np.dot(self.transmat_prob, self.obs_prob[:, obs_seq[i]] * beta[i + 1, :]).T
-        beta[0, :] = self.start_prob * self.obs_prob[:, obs_seq[0]] * beta[1, :]
-        return beta[:length]
+        beta = np.ones((length, self.n_states))
+        for i in range(length - 2, -1, -1):
+            beta[i, :] = np.dot(self.transmat_prob, self.obs_prob[:, obs_seq[i + 1]] * beta[i + 1, :]).T
+        return beta
 
     def backward_prob(self, obs_seq: np.ndarray):
         beta = self._backward_prob_dist(obs_seq)
-        return beta[0, :].sum()
+        bp = np.dot(self.start_prob, self.obs_prob[:, obs_seq[0]].reshape(-1, 1) * beta[0:1, :].T)[0]
+        return bp
 
     def fit(self, X: np.ndarray):
         n_samples, length = X.shape
         obs_set = np.unique(X)
         n_obs = np.size(obs_set)
         rs = np.random.RandomState(self.random_state)
-        # self.transmat_prob = rs.random_sample((self.n_states, self.n_states))
         transmat_prob = rs.random_sample((self.n_states, self.n_states))
         self.transmat_prob = transmat_prob / transmat_prob.sum(axis=1, keepdims=True)
         obs_prob = rs.random_sample((self.n_states, n_obs))
@@ -72,10 +90,10 @@ class HiddenMarkovModel:
                 for t in range(length - 1):
                     xi_numerator = alpha[t].reshape(-1, 1) * self.transmat_prob * \
                                    self.obs_prob[:, x[t + 1]] * beta[t + 1]
-                    xi_t += xi_numerator / xi_numerator.sum()
+                    xi_t += xi_numerator / (xi_numerator.sum() + 1e-500)
                 xi += xi_t
                 gamma_numerator = alpha * beta
-                gamma_i = gamma_numerator / (gamma_numerator.sum(axis=1, keepdims=True) + 1e-9)
+                gamma_i = gamma_numerator / (gamma_numerator.sum(axis=1, keepdims=True) + 1e-500)
                 gamma += gamma_i
                 for k in range(n_obs):
                     idx = x == obs_set[k]
@@ -84,12 +102,13 @@ class HiddenMarkovModel:
             old_transmat = self.transmat_prob.copy()
             old_obs = self.obs_prob.copy()
             self.start_prob = gamma[0] / n_samples
-            self.transmat_prob = xi / (gamma[:length - 1].sum(axis=0, keepdims=True) + 1e-9)
-            self.obs_prob = obs_numerator / (gamma.sum(axis=0).reshape(-1, 1) + 1e-9)
+            self.transmat_prob = xi / (gamma[:length - 1].sum(axis=0, keepdims=True).T + 1e-500)
+            self.obs_prob = obs_numerator / (gamma.sum(axis=0).reshape(-1, 1) + 1e-500)
             if np.linalg.norm(self.start_prob - old_start) < self.eps and \
                     np.linalg.norm(self.transmat_prob - old_transmat) < self.eps and \
-                    np.linalg.norm(self.obs_prob - old_obs) < self.eps:
-                return self
+                    np.linalg.norm(self.obs_prob - old_obs) < self.eps: return self
+        warn("Maybe hmm doesn't converge!")
+        return self
 
 
 if __name__ == "__main__":
@@ -100,21 +119,20 @@ if __name__ == "__main__":
     from hmmlearn.hmm import MultinomialHMM
     import numpy as np
 
-    h = MultinomialHMM(n_components=3)
-    h.startprob_ = np.array([0.2, 0.4, 0.4])
-    h.transmat_ = np.array([[0.5, 0.2, 0.3], [0.3, 0.5, 0.2], [0.2, 0.3, 0.5]])
-    h.emissionprob_ = np.array([[0.5, 0.5], [0.4, 0.6], [0.7, 0.3]])
+    np.set_printoptions(precision=5, suppress=True)
 
-    # X = np.zeros((50, 3))
-    #
-    # for i in range(50):
-    #     X[i, :] = h.sample(n_samples=3, random_state=i)[0].squeeze()
-    # for x in obs_seq:
-    #     p = hmm.forward_prob(x)
-    #     print(p)
-    X = h.sample(n_samples=150, random_state=0)[0]
-    hmm = HiddenMarkovModel(n_states=3, eps=1e-8, random_state=42, max_iter=1000)
-    hmm.fit(X.reshape(-1, 3).astype(np.int16))
+    # h = MultinomialHMM(n_components=3)
+    # h.startprob_ = np.array([0.2, 0.4, 0.4])
+    # h.transmat_ = np.array([[0.5, 0.2, 0.3], [0.3, 0.5, 0.2], [0.2, 0.3, 0.5]])
+    # h.emissionprob_ = np.array([[0.5, 0.5], [0.4, 0.6], [0.7, 0.3]])
+    # X = h.sample(n_samples=1200, random_state=0)[0]
+    hmm_generate = HiddenMarkovModel(n_states=3)
+    hmm_generate.start_prob = np.array([0.2, 0.4, 0.4])
+    hmm_generate.transmat_prob = np.array([[0.5, 0.2, 0.3], [0.3, 0.5, 0.2], [0.2, 0.3, 0.5]])
+    hmm_generate.obs_prob = np.array([[0.5, 0.5], [0.4, 0.6], [0.7, 0.3]])
+    X, _ = hmm_generate.simulate(1000)
+    hmm = HiddenMarkovModel(n_states=3, eps=0.01, max_iter=500)
+    hmm.fit(X.reshape(1, -1))
     print('初始状态分布概率：')
     print(hmm.start_prob)
     print('状态转移概率矩阵：')
@@ -123,8 +141,8 @@ if __name__ == "__main__":
     print('观测概率矩阵：')
     print(hmm.obs_prob)
     print(hmm.obs_prob.sum(axis=1))
-    hmmL = MultinomialHMM(n_components=3).fit(X, lengths=[3] * 50)
+    hmmL = MultinomialHMM(n_components=3).fit(X.reshape(-1, 1))
     print('from hmmlearn:')
     print(hmmL.startprob_)
-    print(hmmL.transmat_.sum(axis=1))
+    print(hmmL.transmat_)
     print(hmmL.emissionprob_)

@@ -42,10 +42,7 @@ class KNearestNeighborsClassifier:
         if samples == 1:
             median = 0
         else:
-            if samples % 2 == 1:
-                median = (samples - 1) // 2
-            else:
-                median = samples // 2
+            median = samples // 2
             sorted_index = X[:, split_dimension].argsort()
             X = X[sorted_index]
             y = y[sorted_index]
